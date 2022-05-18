@@ -31767,7 +31767,6 @@ Storage Resource Management
 Storage Solutions
 Storage Systems
 Storage Virtualization
-Store
 Store Clustering
 Store Communications
 Store Design
