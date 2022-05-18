@@ -1,23 +1,27 @@
 import os
 import re
-import fitz
+import fitz # install
+import glob
 import nltk
 import glob
-import cv2
-import spacy
+import cv2 # install
+import spacy # install
 import spacy.cli
-import pytesseract
-import numpy as np
+from spacy.language import Language
+from spacy_langdetect import LanguageDetector
+import easyocr # install
+# import pytesseract // optional
+import numpy as np # install
 import textseg as ts
 from spacy import displacy
-from PyPDF2 import PdfFileReader
-from pdf2image import convert_from_path
+from PyPDF2 import PdfFileReader # install
+from pdf2image import convert_from_path # install
 
-# nltk.download('punkt')
-# nltk.download('stopwords')
-# spacy.cli.download("en_core_web_lg")
+# nltk.download('punkt') # 1st run
+# nltk.download('stopwords') # 1st run
+# spacy.cli.download("en_core_web_lg") # 1st run
 
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe' #tesseract.exe location in your computer
+# pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe' #tesseract.exe location in your computer // optional
 
 # SKILLS EXTRACTION
 # Add skills database from a file
@@ -94,27 +98,42 @@ def convert_pdf_to_image(filepath,img_path_to_save):
     except Exception as e:
         return {"status":400,"response":str(e)}
 
-# Extract text from a png
-def text_from_tesseract(output_img):
-    text = str(((pytesseract.image_to_string(output_img))))
-    return text
+# Extract text from a png // optional
+# def text_from_tesseract(output_img):
+#     text = str(((pytesseract.image_to_string(output_img))))
+#     return text
+
+def text_from_easyocr(img, reader):
+    all_text = ""
+    result = reader.readtext(img)
+
+    for (bbox, text, prob) in result:
+        all_text += text + " "
+
+    return all_text
+
 
 # Segment and then extract the data from a resume
-def segment_extract_data(data,  path_to_write, singleFile=True):
-    documents = []
+def segment_extract_data(data,  path_to_write, reader, singleFile=True):
+    documents = [] # file path nya untuk pdf
 
     if singleFile:
         documents.append(data)
     else:
         documents = data
 
-    final_name_list=[]
-    final_text_opencv=[]
-    final_text_tessaract=[]
+    final_name_list=[] # nama file
+    final_text_opencv=[] # text dengan segmen
+    # final_text_tessaract=[]
+    final_text_easyocr=[] # semua text tanpa segmen
     for i in documents:
         pdf = PdfFileReader(open(i,'rb'))
         fname = i.split('/')[-1]
-        print(pdf.getNumPages())
+
+        # if pdf.getNumPages() > 3:
+        #     print('Pages to many : {}!, Skipping...'.format(pdf.getNumPages()))
+        #     continue
+
         images = convert_from_path(i)
         resumes_img=[]
         for j in range(len(images)):
@@ -123,7 +142,8 @@ def segment_extract_data(data,  path_to_write, singleFile=True):
             resumes_img.append(path_to_write+fname.split('.')[0]+'_'+ str(j) +'.jpg')
         name_list = fname.split('.')[0]+'_' +'.jpg'
         text_opencv=[]
-        text_tessaract=[]
+        # text_tessaract=[]
+        text_easyocr=[]
         for i in resumes_img:
             frame=cv2.imread(i)
             os.remove(i)
@@ -135,14 +155,17 @@ def segment_extract_data(data,  path_to_write, singleFile=True):
                 cv2.imwrite(path_to_write+img.split('.')[0]+str(i)+".png", split_img[i])
 
             text_opencv.append(c_dict)
-            text_tessaract+=text_from_tesseract(output_img)
-            tesseract_str = ''.join(text_tessaract)
+            # text_tessaract+=text_from_tesseract(output_img)
+            # tesseract_str = ''.join(text_tessaract)
+            text_easyocr+=text_from_easyocr(output_img, reader)
+            easyocr_str = ''.join(text_easyocr)
 
         final_name_list.append(name_list)
         final_text_opencv.append(text_opencv)
-        final_text_tessaract.append(tesseract_str)
+        # final_text_tessaract.append(tesseract_str)
+        final_text_easyocr.append(easyocr_str)
 
-    return final_text_opencv, final_name_list, final_text_tessaract
+    return final_text_opencv, final_name_list, final_text_easyocr
 
 # EXPERIENCE EXTRACTION
 # Extract exp from a text
@@ -162,13 +185,24 @@ def extract_exp(textList, nlp):
     return exp
 
 # Do all the above with just 1 function
-def extract_data(filePath, skills, nlp, temp_path):
+def extract_data(filePath, skills, nlp, temp_path, reader):
     file_data = {'File': "", 'Skills':"", "Exp":""}
 
-    textList, fileName, fullText = segment_extract_data(filePath, temp_path)
+    textList, fileName, fullText = segment_extract_data(filePath, temp_path, reader)
     file_data['File'] = fileName[0]
     file_data['Skills'] = extract_skills((fullText[0]), skills_data=skills)
     file_data['Exp'] = extract_exp(textList, nlp)
+
+    return file_data
+
+def batch_extract_data(filePath, skills, nlp, temp_path):
+    file_data = {'File': [], 'Skills': [], "Exp": []}
+
+    for file in os.listdir(filePath):
+        data = extract_data('{}/{}'.format(filePath, file), skills, nlp, temp_path)
+        file_data['File'].append(data['File'])
+        file_data['Skills'].append(data['Skills'])
+        file_data['Exp'].append(data['Exp'])
 
     return file_data
 
@@ -184,4 +218,4 @@ if __name__ == '__main__':
     nlp = spacy.load('model_best')
 
     # Get the filename, skills, exp
-    data = extract_data('./sample/CV Dwi Wijaya 07 - Dwi WIjaya.pdf', skills, nlp, temp_path)
+    data = extract_data('ini di ganti', skills, nlp, temp_path)
